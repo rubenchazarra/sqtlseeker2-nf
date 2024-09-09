@@ -21,6 +21,8 @@
  */
 
 
+// 2024-09-10 Edits to the pipeline made by Ruben Chazarra-Gil & Iris at Barcelona Supercomputing Center
+
 // Define parameters
 
 params.genotype = null
@@ -39,6 +41,10 @@ params.ld = 0
 params.min_md = 0.05
 params.max_perm = 1000 
 params.help = false
+
+// 
+// Out dir
+results = "${params.out_dir}/${params.run_tag}/${params.cell_type}/"
 
 
 // Print usage
@@ -155,6 +161,8 @@ println "groups: $show\n"
 
 process index {
 
+    publishDir "${results}/00_index_genotype", mode: 'copy'
+
     input:
     file genotype from genotype_file
 
@@ -175,6 +183,8 @@ index_ch.into{index2nominal_ch; index2permuted_ch}
 
 process prepare {
 
+    publishDir "${results}/01_tx_exp", mode: 'copy'
+
     tag { group }
 
     input:
@@ -191,12 +201,22 @@ process prepare {
     script:
     if (params.covariates == true)
     """
-    prepare_trexp.R --group "$group" -t $te -m $metadata --gene_location $genes --covariates --output_tre tre.df.RData --output_gene genes.ss.bed --output_cov covariates.df.RData
+    prepare_trexp.R --group "$group" -t $te -m $metadata --gene_location $genes --covariates \
+        --min_gene_expr 0.1 \
+        --min_proportion 0.4 \
+        --min_transcript_expr 0.1 \
+        --min_dispersion 0.01 \
+        --output_tre tre.df.RData --output_gene genes.ss.bed --output_cov covariates.df.RData
 
     """
     else
     """
-    prepare_trexp.R --group "$group" -t $te -m $metadata --gene_location $genes --output_tre tre.df.RData --output_gene genes.ss.bed --output_cov covariates.df.RData
+    prepare_trexp.R --group "$group" -t $te -m $metadata --gene_location $genes 
+        --min_gene_expr 0.1 \
+        --min_proportion 0.4 \
+        --min_transcript_expr 0.1 \
+        --min_dispersion 0.01 \
+        --output_tre tre.df.RData --output_gene genes.ss.bed --output_cov covariates.df.RData
 
     """
 }
@@ -211,6 +231,8 @@ cov_ch.into {cov2nominal_ch; cov2permuted_ch}
 tre2nominal_ch.join(cov2nominal_ch).combine(genes2nominal_ch.splitText( by: params.kn, file: "nominal_in" ), by: 0).set{nominal_in_ch}
 
 process nominal_test {
+
+    publishDir "${results}/02_sQTL_nominal", mode: 'copy'
 
     tag {"$group, $chunk"}
  
@@ -240,7 +262,10 @@ nominal_out_ch.collectFile(sort: { it.name }).map() {[it.name, it]}.into{all_nom
 
 process nominal_mtc {
 
-    publishDir "${params.dir}/groups/$group"
+    // publishDir "${params.dir}/groups/$group"
+    
+    publishDir "${results}/02_sQTL_nominal", mode: 'copy'
+    
     tag { group }
 
     input: 
@@ -265,6 +290,8 @@ if (params.mode == "permuted") {
 
     process permuted_test {
 
+        publishDir "${results}/03_sQTL_permuted", mode: 'copy'
+
         tag {"$group, $chunk"}
 
         input:
@@ -288,7 +315,10 @@ if (params.mode == "permuted") {
 
     process permuted_mtc {
 
-        publishDir "${params.dir}/groups/$group"
+        // publishDir "${params.dir}/groups/$group"
+        
+        publishDir "${results}/03_sQTL_permuted", mode: 'copy'
+
         tag { group }
 
         input:

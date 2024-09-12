@@ -20,6 +20,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+// SEP-2024 Edits to the pipeline made by Ruben Chazarra-Gil & Iris Mestres at
+// Barcelona Supercomputing Center
 
 // Define parameters
 
@@ -34,11 +36,35 @@ params.covariates = false
 params.kn = 10
 params.kp = 1
 params.fdr = 0.05
-params.svqtl = true
+params.svqtl = false
 params.ld = 0
 params.min_md = 0.05
 params.max_perm = 1000 
 params.help = false
+
+// Define full-custom additional parameters
+// prepare_trexp
+
+params.min_gene_exp = 1
+params.min_proportion = 0.8
+params.min_transcript_expr = 0.1
+params.min_dispersion = 0.1
+
+// sqtlseeker and sqtlseeker.p
+
+params.asympt = true
+params.min_nb_ext_scores_nominal = 1000
+params.min_nb_ext_scores_permuted = 100
+params.nb_perm_max_nominal = 1e6
+params.nb_perm_max_svqtl = 1e4
+params.nb_perm_min = 100
+params.min_nb_ind_geno = 10
+
+// sqtls and sqtls.p
+
+params.fdr_svqtl = 0.05
+params.type_fdr = "BH"
+params.plot_pdf = null
 
 
 // Print usage
@@ -155,6 +181,8 @@ println "groups: $show\n"
 
 process index {
 
+    publishDir "${params.dir}/00_idx_genotype", mode: 'copy'
+
     input:
     file genotype from genotype_file
 
@@ -175,6 +203,8 @@ index_ch.into{index2nominal_ch; index2permuted_ch}
 
 process prepare {
 
+    publishDir "${params.dir}/01_tx_exp/$group", mode: 'copy'
+
     tag { group }
 
     input:
@@ -191,12 +221,35 @@ process prepare {
     script:
     if (params.covariates == true)
     """
-    prepare_trexp.R --group "$group" -t $te -m $metadata --gene_location $genes --covariates --output_tre tre.df.RData --output_gene genes.ss.bed --output_cov covariates.df.RData
+    prepare_trexp.R \
+        --transcript_expr $te \
+        --metadata $metadata \
+        --gene_location $genes \
+        --group "$group" \
+        --covariates \
+        --min_gene_expr ${params.min_gene_exp} \
+        --min_proportion ${params.min_proportion} \
+        --min_transcript_expr ${params.min_transcript_expr} \
+        --min_dispersion ${params.min_dispersion} \
+        --output_tre tre.df.RData \
+        --output_gene genes.ss.bed \
+        --output_cov covariates.df.RData
 
     """
     else
     """
-    prepare_trexp.R --group "$group" -t $te -m $metadata --gene_location $genes --output_tre tre.df.RData --output_gene genes.ss.bed --output_cov covariates.df.RData
+    prepare_trexp.R \
+        --transcript_expr $te \
+        --metadata $metadata \
+        --gene_location $genes \
+        --group "$group" \
+        --min_gene_expr ${params.min_gene_exp} \
+        --min_proportion ${params.min_proportion} \
+        --min_transcript_expr ${params.min_transcript_expr} \
+        --min_dispersion ${params.min_dispersion} \
+        --output_tre tre.df.RData \
+        --output_gene genes.ss.bed \
+        --output_cov covariates.df.RData
 
     """
 }
@@ -212,6 +265,8 @@ tre2nominal_ch.join(cov2nominal_ch).combine(genes2nominal_ch.splitText( by: para
 
 process nominal_test {
 
+    publishDir "${params.dir}/02_sQTL_nominal/$group", mode: 'copy'
+
     tag {"$group, $chunk"}
  
     input:
@@ -222,16 +277,22 @@ process nominal_test {
     set val(group), file('nominal_out.*') into nominal_out_ch 
  
     script: 
-    if (params.svqtl == false)
     """
     res=\$(echo $chunk | sed 's/_in/_out/')
-    sqtlseeker.R -t $tre_rdata -i $indexed_geno -l $chunk -c $cov_rdata --asympt --ld ${params.ld} -o \$res 
-
-    """
-    else
-    """
-    res=\$(echo $chunk | sed 's/_in/_out/')
-    sqtlseeker.R -t $tre_rdata -i $indexed_geno -l $chunk -c $cov_rdata --asympt --svqtl --ld ${params.ld} --window ${params.win} -o \$res
+    sqtlseeker.R \
+        --transcript_expr $tre_rdata \
+        --indexed_geno $indexed_geno \
+        --gene_location $chunk \
+        --covariates $cov_rdata \
+        --asympt ${params.asympt} \
+        --min_nb_ext_scores ${params.min_nb_ext_scores_nominal} \
+        --min_nb_ind_geno ${params.min_nb_ind_geno} \
+        --nb_perm_max ${params.nb_perm_max_nominal} \
+        --nb_perm_max_svqtl ${params.nb_perm_max_svqtl} \
+        --ld ${params.ld} \
+        --window ${params.win} \
+        --svqtl ${params.svqtl} \
+        --output_file \$res 
 
     """
 }
@@ -240,7 +301,9 @@ nominal_out_ch.collectFile(sort: { it.name }).map() {[it.name, it]}.into{all_nom
 
 process nominal_mtc {
 
-    publishDir "${params.dir}/groups/$group"
+    // publishDir "${params.dir}/groups/$group"
+    publishDir "${params.dir}/02_sQTL_nominal/$group", mode: 'copy'
+
     tag { group }
 
     input: 
@@ -251,7 +314,14 @@ process nominal_mtc {
  
     script:
     """
-    sqtls.R -n all-tests.nominal.tsv -f ${params.fdr} --rm_svqtl --md_min ${params.min_md} -o sqtls-${params.fdr}fdr.nominal.tsv
+    sqtls.R \
+        --nominal all-tests.nominal.tsv \
+        --fdr ${params.fdr} \
+        --rm_svqtl ${params.svqtl} \
+        --md_min ${params.min_md} \
+        --type_fdr ${params.type_fdr} \
+        --plot_pdf ${params.plot_pdf} \
+        -output sqtls-${params.fdr}fdr.nominal.tsv
 
     """       
 }
@@ -265,10 +335,12 @@ if (params.mode == "permuted") {
 
     process permuted_test {
 
+        publishDir "${params.dir}/03_sQTL_permuted/$group", mode: 'copy'
+
         tag {"$group, $chunk"}
 
         input:
-	set val(group), file(tre_rdata), file(cov_rdata), file (chunk) from permuted_in_ch
+	    set val(group), file(tre_rdata), file(cov_rdata), file (chunk) from permuted_in_ch
         set file(indexed_geno), file(tbi) from index2permuted_ch
 
         output:
@@ -277,8 +349,17 @@ if (params.mode == "permuted") {
         script:
         """
         res=\$(echo $chunk | sed 's/_in/_out/')
-        sqtlseeker.p.R -t $tre_rdata -i $indexed_geno -l $chunk -c $cov_rdata -M ${params.max_perm} --window ${params.win} -o \$res
-
+        sqtlseeker.p.R -t $tre_rdata -i $indexed_geno \
+            --transcript_expr $tre_rdata \
+            --indexed_geno $indexed_geno \
+            --gene_location $chunk \
+            --covariates $cov_rdata \
+            --min_nb_ext_scores ${params.min_nb_ext_scores_permuted} \
+            --min_nb_ind_geno ${params.min_nb_ind_geno} \
+            --nb_perm_max ${params.max_perm} \
+            --nb_perm_min ${params.nb_perm_min} \
+            --window ${params.win} \
+            --output_file \$res 
         """
     }    
 
@@ -288,7 +369,9 @@ if (params.mode == "permuted") {
 
     process permuted_mtc {
 
-        publishDir "${params.dir}/groups/$group"
+        // publishDir "${params.dir}/groups/$group"
+        publishDir "${params.dir}/03_sQTL_permuted/$group", mode: 'copy'
+        
         tag { group }
 
         input:
@@ -300,11 +383,15 @@ if (params.mode == "permuted") {
  
         script:
         """
-        sqtls.p.R -n all-tests.nominal.tsv -p all-tests.permuted.tsv -f ${params.fdr} --rm_svqtl --md_min ${params.min_md} -o sqtls-${params.fdr}fdr.permuted.tsv
-
+        sqtls.p.MOD.R \
+            --nominal all-tests.nominal.tsv \
+            --permuted all-tests.permuted.tsv \
+            --fdr ${params.fdr} \
+            --type_fdr ${params.type_fdr} \
+            --rm_svqtl ${params.svqtl} \
+            --md_min ${params.min_md} \
+            --output sqtls-${params.fdr}fdr.permuted.tsv
         """
     }
-
 }
-
 

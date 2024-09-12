@@ -3,6 +3,7 @@
 #### Test gene/SNP association (nominal pass)
 
 ## 1. Load libraries and arguments
+### (SEP-2024; Iris) change action from 'asympt' and 'svqtl' to 'store'
 
 library(optparse)
 library(sQTLseekeR2)
@@ -19,7 +20,7 @@ option_list <- list(
                 metavar = "FILE"),
     make_option(c("-o", "--output_file"), type = "character", help = "output file", 
                 metavar = "FILE"),
-    make_option(c("-a", "--asympt"), action = "store_true", 
+    make_option(c("-a", "--asympt"), action = "store", 
                 help = "use permutations instead of asymptotic approximation [default %default]", 
                 default = FALSE),
     make_option(c("-e", "--min_nb_ext_scores"), type = "numeric", 
@@ -40,7 +41,7 @@ option_list <- list(
     make_option(c("-d", "--ld"), type = "numeric", 
                 help = "cluster SNPs in LD >= ld [default %default]", 
                 metavar = "NUMERIC", default = NULL),
-    make_option(c("-x", "--svqtl"), action = "store_true", 
+    make_option(c("-x", "--svqtl"), action = "store", 
                 help = "svQTL test will be performed [default %default]", 
                 default = FALSE),
     make_option(c("-s", "--seed"), type = "numeric", 

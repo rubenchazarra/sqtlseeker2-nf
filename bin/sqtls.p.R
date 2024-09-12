@@ -3,6 +3,7 @@
 #### Run FDR after permuted and nominal passes
 
 ## 1. Load libraries and arguments
+### (SEP-2024; Iris) change action from 'rm_svqtl' to 'store'
 
 library(optparse)
 library(sQTLseekeR2)
@@ -21,7 +22,7 @@ option_list <- list(
     make_option(c("-m", "--md_min"), type = "numeric", 
                 help = "sQTLs with MD value below the threshold are not reported", 
                 metavar = "NUMERIC", default = 0.05),
-    make_option(c("-r", "--rm_svqtl"), action = "store_true", 
+    make_option(c("-r", "--rm_svqtl"), action = "store", 
                 help = "significant sQTLs that are also significant svQTLs are not reported", 
                 default = FALSE),
     make_option(c("-o", "--output"), type = "character",
